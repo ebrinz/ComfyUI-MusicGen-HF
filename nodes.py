@@ -76,7 +76,10 @@ class HuggingFaceMusicGen:
         self.model = None
         self.current_model_size = None
         self.device = self._get_optimal_device()
-        print(f"MusicGen will use device: {self.device}")
+        try:
+            print(f"MusicGen will use device: {self.device}")
+        except OSError:
+            pass
     
     def _get_optimal_device(self):
         """Determine the best available device with MPS support"""
