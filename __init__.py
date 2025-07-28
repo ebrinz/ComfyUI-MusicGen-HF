@@ -5,20 +5,11 @@ ComfyUI MusicGen Node Package
 Hugging Face Transformers-based MusicGen integration for ComfyUI
 """
 
+# Import from the modular node structure
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
-from .nodes import (HuggingFaceMusicGen, BPMDurationInput, LoopingAudioPreview, SmoothAudioQueue, SaveAudioStandalone, LoadAudioStandalone)
-
-NODE_CLASS_MAPPINGS = {
-    "MusicGenHF": HuggingFaceMusicGen,
-    "BPMDurationInput": BPMDurationInput,
-    "LoopingAudioPreview": LoopingAudioPreview,
-    "SmoothAudioQueue": SmoothAudioQueue,
-    "Save Audio HF": SaveAudioStandalone,
-    "Load Audio HF": LoadAudioStandalone,
-}
 
 # This is required for ComfyUI to recognize the node package
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
-# Optional: Add version info
-__version__ = "1.0.0"
+# Version info
+__version__ = "1.1.0"

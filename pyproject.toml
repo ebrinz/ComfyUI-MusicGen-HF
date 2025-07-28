@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-musicgen-hf"
-version = "1.0.0"
+version = "1.1.0"
 authors = [
     {name = "crashy"},
 ]
-description = "Facebook's MusicGen integration for ComfyUI using Hugging Face Transformers"
+description = "Advanced MusicGen integration for ComfyUI with BPM control, audio preview, crossfading, and musical timing precision"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -21,10 +21,11 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio :: Sound Synthesis",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-keywords = ["comfyui", "musicgen", "audio", "generation", "ai", "music"]
+keywords = ["comfyui", "musicgen", "audio", "generation", "ai", "music", "bpm", "crossfade", "preview", "timing", "beats", "loop"]
 dependencies = [
     "transformers>=4.30.0",
     "accelerate>=0.20.0",
