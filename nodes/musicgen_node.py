@@ -188,13 +188,53 @@ class HuggingFaceMusicGen:
         try:
             # Prepare inputs
             if conditioning_audio is not None:
-                # Audio-prompted generation
-                if isinstance(conditioning_audio, np.ndarray):
-                    conditioning_audio = conditioning_audio.astype(np.float32)
+                # Audio-prompted generation - handle ComfyUI audio format
+                print(f"🎵 Processing conditioning audio...")
+                
+                # Extract waveform from ComfyUI audio format
+                if isinstance(conditioning_audio, dict) and "waveform" in conditioning_audio:
+                    conditioning_waveform = conditioning_audio["waveform"]
+                    conditioning_sample_rate = conditioning_audio["sample_rate"]
+                    print(f"   Conditioning audio shape: {conditioning_waveform.shape}")
+                    print(f"   Conditioning sample rate: {conditioning_sample_rate}Hz")
+                elif isinstance(conditioning_audio, np.ndarray):
+                    conditioning_waveform = torch.from_numpy(conditioning_audio).float()
+                    conditioning_sample_rate = 32000  # Default assumption
+                    print(f"   Converted numpy array, shape: {conditioning_waveform.shape}")
+                else:
+                    raise ValueError(f"Unsupported conditioning audio format: {type(conditioning_audio)}")
+                
+                # Convert to numpy for processor (HuggingFace expects numpy)
+                if conditioning_waveform.dim() > 2:
+                    # Remove batch dimension if present: (batch, channels, samples) -> (channels, samples)
+                    conditioning_waveform = conditioning_waveform.squeeze(0)
+                
+                if conditioning_waveform.dim() > 1:
+                    # Take first channel if stereo: (channels, samples) -> (samples,)
+                    conditioning_waveform = conditioning_waveform[0]
+                
+                # Use the model's expected sample rate
+                model_sample_rate = self.model.config.audio_encoder.sampling_rate
+                print(f"   Model expects sample rate: {model_sample_rate}Hz")
+                
+                # Resample if necessary
+                if conditioning_sample_rate != model_sample_rate:
+                    print(f"   Resampling from {conditioning_sample_rate}Hz to {model_sample_rate}Hz...")
+                    import torchaudio.functional as F
+                    conditioning_waveform = F.resample(
+                        conditioning_waveform, 
+                        conditioning_sample_rate, 
+                        model_sample_rate
+                    )
+                    print(f"   Resampled shape: {conditioning_waveform.shape}")
+                
+                # Convert to numpy array for the processor
+                conditioning_numpy = conditioning_waveform.cpu().numpy().astype(np.float32)
+                print(f"   Final conditioning shape for processor: {conditioning_numpy.shape}")
                 
                 inputs = self.processor(
-                    audio=conditioning_audio,
-                    sampling_rate=self.model.config.audio_encoder.sampling_rate,
+                    audio=conditioning_numpy,
+                    sampling_rate=model_sample_rate,
                     text=[prompt],
                     padding=True,
                     return_tensors="pt",
@@ -258,8 +298,13 @@ class HuggingFaceMusicGen:
             # Create info string
             actual_duration = len(audio_data) / sampling_rate
             duration_source = "BPM input" if duration_override > 0.0 else "manual"
+            conditioning_info = "None"
+            if conditioning_audio is not None:
+                conditioning_info = "✅ Used conditioning audio"
+            
             info = f"Generated {actual_duration:.1f}s audio using MusicGen-{model_size} on {self.device}\n"
             info += f"Duration source: {duration_source} ({effective_duration:.2f}s requested)\n"
+            info += f"Conditioning: {conditioning_info}\n"
             info += f"Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n"
             info += f"Settings: guidance={guidance_scale}, tokens={tokens_to_use}, seed={seed}\n"
             info += f"Sample rate: {sampling_rate}Hz"
@@ -268,7 +313,23 @@ class HuggingFaceMusicGen:
             
         except Exception as e:
             error_msg = f"Error generating audio: {str(e)}"
-            print(error_msg)
+            print(f"❌ {error_msg}")
+            
+            # Provide more specific error information for conditioning audio issues
+            if conditioning_audio is not None:
+                print(f"🔍 Conditioning audio debug info:")
+                print(f"   Type: {type(conditioning_audio)}")
+                if isinstance(conditioning_audio, dict):
+                    print(f"   Keys: {list(conditioning_audio.keys())}")
+                    if "waveform" in conditioning_audio:
+                        print(f"   Waveform shape: {conditioning_audio['waveform'].shape}")
+                        print(f"   Waveform dtype: {conditioning_audio['waveform'].dtype}")
+                    if "sample_rate" in conditioning_audio:
+                        print(f"   Sample rate: {conditioning_audio['sample_rate']}")
+                elif hasattr(conditioning_audio, 'shape'):
+                    print(f"   Shape: {conditioning_audio.shape}")
+                    print(f"   Dtype: {conditioning_audio.dtype}")
+            
             # Return silence on error in ComfyUI AUDIO format
             empty_audio = torch.zeros([1, 1, int(32000 * effective_duration)], dtype=torch.float32)  # 32kHz silence
             empty_audio_output = {
