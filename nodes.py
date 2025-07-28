@@ -121,25 +121,32 @@ class HuggingFaceMusicGen:
                     self.model = MusicgenForConditionalGeneration.from_pretrained(
                         model_name,
                         torch_dtype=torch.float32,
-                        low_cpu_mem_usage=True
+                        low_cpu_mem_usage=False
                     )
                 elif self.device == "cuda":
                     # For CUDA, can use mixed precision
                     self.model = MusicgenForConditionalGeneration.from_pretrained(
                         model_name,
                         torch_dtype=torch.float16,
-                        low_cpu_mem_usage=True
+                        low_cpu_mem_usage=False
                     )
                 else:
                     # CPU
                     self.model = MusicgenForConditionalGeneration.from_pretrained(
                         model_name,
-                        torch_dtype=torch.float32
+                        torch_dtype=torch.float32,
+                        low_cpu_mem_usage=False
                     )
                 
-                # Move model to device
-                self.model = self.model.to(self.device)
+                # Move model to device - ensures all params & buffers are on target device
+                self.model = self.model.to(self.device, dtype=None)
+                self.model.eval()  # Set to evaluation mode
                 self.current_model_size = model_size
+                
+                # Verify all parameters and buffers are on the correct device
+                for name, buf in self.model.named_buffers():
+                    if buf.device.type != self.device:
+                        print(f"⚠️ Warning: {name} buffer still on {buf.device}, expected {self.device}")
                 
                 print(f"✅ MusicGen-{model_size} loaded successfully on {self.device}")
                 
@@ -190,8 +197,9 @@ class HuggingFaceMusicGen:
                     return_tensors="pt",
                 )
             
-            # Move inputs to device
-            inputs = self._move_to_device(inputs)
+            # Move inputs to device - ensure all tensors are on same device as model
+            inputs = {k: v.to(self.device, non_blocking=True) if torch.is_tensor(v) else v
+                      for k, v in inputs.items()}
             
             # Calculate max_new_tokens based on duration
             # MusicGen generates approximately 50 tokens per second at 32kHz
@@ -201,31 +209,14 @@ class HuggingFaceMusicGen:
             
             # Generate audio with proper device handling
             with torch.no_grad():
-                if self.device == "mps":
-                    # MPS-specific generation settings
-                    # Ensure all inputs are properly allocated on MPS
-                    for key, value in inputs.items():
-                        if isinstance(value, torch.Tensor):
-                            inputs[key] = value.contiguous().to(self.device, non_blocking=False)
-                    
-                    audio_values = self.model.generate(
-                        **inputs,
-                        do_sample=do_sample,
-                        guidance_scale=guidance_scale,
-                        max_new_tokens=tokens_to_use,
-                        temperature=temperature if do_sample else 1.0,
-                        pad_token_id=self.model.generation_config.pad_token_id,
-                    )
-                else:
-                    # CUDA/CPU generation
-                    audio_values = self.model.generate(
-                        **inputs,
-                        do_sample=do_sample,
-                        guidance_scale=guidance_scale,
-                        max_new_tokens=tokens_to_use,
-                        temperature=temperature if do_sample else 1.0,
-                        pad_token_id=self.model.generation_config.pad_token_id,
-                    )
+                audio_values = self.model.generate(
+                    **inputs,
+                    do_sample=do_sample,
+                    guidance_scale=guidance_scale,
+                    max_new_tokens=tokens_to_use,
+                    temperature=temperature if do_sample else 1.0,
+                    pad_token_id=self.model.generation_config.pad_token_id,
+                )
             
             # Convert to numpy and get sampling rate
             sampling_rate = self.model.config.audio_encoder.sampling_rate
