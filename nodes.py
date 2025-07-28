@@ -196,7 +196,8 @@ class HuggingFaceMusicGen:
             # Calculate max_new_tokens based on duration
             # MusicGen generates approximately 50 tokens per second at 32kHz
             calculated_tokens = int(duration * 50)
-            tokens_to_use = min(calculated_tokens, max_new_tokens)
+            # Use the calculated tokens for duration, but respect the model's absolute maximum
+            tokens_to_use = min(calculated_tokens, 1503)  # 1503 is the model's hard limit
             
             # Generate audio with proper device handling
             with torch.no_grad():
