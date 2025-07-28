@@ -6,12 +6,12 @@ Hugging Face Transformers-based MusicGen integration for ComfyUI
 """
 
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
-from .nodes import (MusicGenHF, SaveAudioHF, LoadAudioHF)
+from .nodes import (HuggingFaceMusicGen, SaveAudioStandalone, LoadAudioStandalone)
 
 NODE_CLASS_MAPPINGS = {
-    "MusicGenHF": MusicGenHF,
-    "Save Audio HF": SaveAudioHF,
-    "Load Audio HF": LoadAudioHF,
+    "MusicGenHF": HuggingFaceMusicGen,
+    "Save Audio HF": SaveAudioStandalone,
+    "Load Audio HF": LoadAudioStandalone,
 }
 
 # This is required for ComfyUI to recognize the node package
