@@ -4,14 +4,48 @@ MusicGen main generation node
 
 import torch
 import numpy as np
+import os
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
-from comfy.cli_args import args
+try:
+    import folder_paths
+    import comfy.model_management
+    COMFY_AVAILABLE = True
+except ImportError:
+    COMFY_AVAILABLE = False
+    print("⚠️ ComfyUI imports not available - using fallback model management")
+
+
+# Set up ComfyUI model directory integration
+if COMFY_AVAILABLE:
+    # Create musicgen models directory
+    MUSICGEN_MODELS_DIR = os.path.join(folder_paths.models_dir, "musicgen")
+    if not os.path.exists(MUSICGEN_MODELS_DIR):
+        os.makedirs(MUSICGEN_MODELS_DIR, exist_ok=True)
+        print(f"📁 Created MusicGen models directory: {MUSICGEN_MODELS_DIR}")
+    
+    # Create HuggingFace cache directory within ComfyUI structure
+    MUSICGEN_CACHE_DIR = os.path.join(MUSICGEN_MODELS_DIR, "huggingface_cache")
+    if not os.path.exists(MUSICGEN_CACHE_DIR):
+        os.makedirs(MUSICGEN_CACHE_DIR, exist_ok=True)
+    
+    # Register with ComfyUI's folder system
+    try:
+        folder_paths.add_model_folder_path("musicgen", MUSICGEN_MODELS_DIR)
+        print(f"✅ Registered MusicGen model path with ComfyUI")
+    except:
+        # Fallback for older ComfyUI versions
+        if "musicgen" not in folder_paths.folder_names_and_paths:
+            folder_paths.folder_names_and_paths["musicgen"] = ([MUSICGEN_MODELS_DIR], {".safetensors", ".pt", ".pth", ".bin"})
+else:
+    MUSICGEN_MODELS_DIR = os.path.expanduser("~/.cache/musicgen")
+    MUSICGEN_CACHE_DIR = os.path.expanduser("~/.cache/huggingface")
 
 
 class HuggingFaceMusicGen:
     """
     ComfyUI Node for Facebook's MusicGen via Hugging Face Transformers
     Supports CUDA, MPS (Apple Silicon), and CPU
+    Integrates with ComfyUI's model management system
     """
     
     @classmethod
@@ -86,7 +120,16 @@ class HuggingFaceMusicGen:
             pass
     
     def _get_optimal_device(self):
-        """Determine the best available device with MPS support"""
+        """Determine the best available device using ComfyUI's system if available"""
+        if COMFY_AVAILABLE:
+            try:
+                # Use ComfyUI's device management
+                device = comfy.model_management.get_torch_device()
+                return str(device).split(':')[0]  # Extract device type (cuda, mps, cpu)
+            except:
+                pass
+        
+        # Fallback to manual detection
         if torch.cuda.is_available():
             return "cuda"
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
@@ -116,34 +159,61 @@ class HuggingFaceMusicGen:
         if self.model is None or self.current_model_size != model_size:
             print(f"Loading MusicGen-{model_size} on {self.device}...")
             
-            model_name = f"facebook/musicgen-{model_size}"
+            # Try to find local model first
+            local_model_path = None
+            if COMFY_AVAILABLE:
+                try:
+                    # Check for local models in ComfyUI directory
+                    local_models = folder_paths.get_filename_list("musicgen")
+                    model_candidates = [f for f in local_models if f"musicgen-{model_size}" in f.lower()]
+                    if model_candidates:
+                        local_model_path = folder_paths.get_full_path("musicgen", model_candidates[0])
+                        print(f"📁 Found local model: {local_model_path}")
+                except:
+                    pass
+            
+            # Determine model source
+            if local_model_path and os.path.exists(local_model_path):
+                model_name = local_model_path
+                cache_dir = None
+                self._loaded_from_local = True
+                print(f"🔄 Loading from ComfyUI models directory")
+            else:
+                model_name = f"facebook/musicgen-{model_size}"
+                cache_dir = MUSICGEN_CACHE_DIR
+                self._loaded_from_local = False
+                print(f"🌐 Downloading from HuggingFace Hub to: {cache_dir}")
             
             try:
                 # Load processor (CPU only, no device needed)
-                self.processor = AutoProcessor.from_pretrained(model_name)
+                self.processor = AutoProcessor.from_pretrained(
+                    model_name, 
+                    cache_dir=cache_dir
+                )
                 
-                # Load model with device-specific settings
-                if self.device == "mps":
-                    # For MPS, use float32 and specific settings
-                    self.model = MusicgenForConditionalGeneration.from_pretrained(
-                        model_name,
-                        torch_dtype=torch.float32,
-                        low_cpu_mem_usage=False
-                    )
-                elif self.device == "cuda":
-                    # For CUDA, can use mixed precision
-                    self.model = MusicgenForConditionalGeneration.from_pretrained(
-                        model_name,
-                        torch_dtype=torch.float16,
-                        low_cpu_mem_usage=False
-                    )
+                # Get optimal dtype for the device
+                if COMFY_AVAILABLE:
+                    try:
+                        # Use ComfyUI's dtype selection
+                        dtype = comfy.model_management.unet_dtype(self.device)
+                    except:
+                        dtype = torch.float32
                 else:
-                    # CPU
-                    self.model = MusicgenForConditionalGeneration.from_pretrained(
-                        model_name,
-                        torch_dtype=torch.float32,
-                        low_cpu_mem_usage=False
-                    )
+                    # Fallback dtype selection
+                    if self.device == "cuda":
+                        dtype = torch.float16
+                    else:
+                        dtype = torch.float32
+                
+                print(f"💾 Using dtype: {dtype}")
+                
+                # Load model with unified settings
+                self.model = MusicgenForConditionalGeneration.from_pretrained(
+                    model_name,
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    cache_dir=cache_dir
+                )
                 
                 # Move model to device - ensures all params & buffers are on target device
                 self.model = self.model.to(self.device, dtype=None)
@@ -157,13 +227,25 @@ class HuggingFaceMusicGen:
                 
                 print(f"✅ MusicGen-{model_size} loaded successfully on {self.device}")
                 
+                # Integrate with ComfyUI's memory management
+                if COMFY_AVAILABLE:
+                    try:
+                        # Inform ComfyUI's memory manager about our model
+                        comfy.model_management.load_models_gpu([self.model])
+                    except:
+                        pass
+                
             except Exception as e:
                 print(f"❌ Error loading model: {e}")
                 # Fallback to CPU if device loading fails
                 if self.device != "cpu":
                     print("Falling back to CPU...")
                     self.device = "cpu"
-                    self.model = MusicgenForConditionalGeneration.from_pretrained(model_name)
+                    self.model = MusicgenForConditionalGeneration.from_pretrained(
+                        model_name, 
+                        torch_dtype=torch.float32,
+                        cache_dir=cache_dir
+                    )
                     self.model = self.model.to("cpu")
                 else:
                     raise e
@@ -302,7 +384,11 @@ class HuggingFaceMusicGen:
             if conditioning_audio is not None:
                 conditioning_info = "✅ Used conditioning audio"
             
+            # Model path info
+            model_location = "ComfyUI models directory" if hasattr(self, '_loaded_from_local') and self._loaded_from_local else "HuggingFace cache"
+            
             info = f"Generated {actual_duration:.1f}s audio using MusicGen-{model_size} on {self.device}\n"
+            info += f"Model location: {model_location}\n"
             info += f"Duration source: {duration_source} ({effective_duration:.2f}s requested)\n"
             info += f"Conditioning: {conditioning_info}\n"
             info += f"Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n"
