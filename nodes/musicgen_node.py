@@ -377,6 +377,13 @@ class HuggingFaceMusicGen:
                 "sample_rate": sampling_rate
             }
             
+            # Store generated audio for conditioning queue system
+            try:
+                from .conditioning_queue_nodes import AudioOutputToConditioningQueue
+                AudioOutputToConditioningQueue.store_generated_audio("main_chain", audio_output)
+            except ImportError:
+                pass  # Conditioning queue node not available
+            
             # Create info string
             actual_duration = len(audio_data) / sampling_rate
             duration_source = "BPM input" if duration_override > 0.0 else "manual"

@@ -8,6 +8,7 @@ from .bpm_nodes import BPMDurationInput
 from .preview_nodes import LoopingAudioPreview, SmoothAudioQueue
 from .advanced_loop_nodes import ProfessionalLoopTransition
 from .io_nodes import SaveAudioStandalone, LoadAudioStandalone, MusicGenAudioToFile
+from .conditioning_queue_nodes import AudioOutputToConditioningQueue, ConditioningQueueManager
 
 # Collect all node mappings
 NODE_CLASS_MAPPINGS = {
@@ -18,7 +19,9 @@ NODE_CLASS_MAPPINGS = {
     "ProfessionalLoopTransition": ProfessionalLoopTransition,
     "MusicGenAudioToFile": MusicGenAudioToFile,
     "SaveAudioStandalone": SaveAudioStandalone,
-    "LoadAudioStandalone": LoadAudioStandalone
+    "LoadAudioStandalone": LoadAudioStandalone,
+    "AudioOutputToConditioningQueue": AudioOutputToConditioningQueue,
+    "ConditioningQueueManager": ConditioningQueueManager
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -29,7 +32,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ProfessionalLoopTransition": "Professional Loop Transition",
     "MusicGenAudioToFile": "Save MusicGen Audio (Legacy)",
     "SaveAudioStandalone": "Save Audio (WAV/FLAC/MP3/Opus)",
-    "LoadAudioStandalone": "Load Audio File"
+    "LoadAudioStandalone": "Load Audio File",
+    "AudioOutputToConditioningQueue": "Audio Output to Conditioning Queue",
+    "ConditioningQueueManager": "Conditioning Queue Manager"
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
