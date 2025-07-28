@@ -45,3 +45,6 @@ include = ["*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.md", "*.txt"]
+
+[tool.comfy]
+id = "comfyui-musicgen-hf"
