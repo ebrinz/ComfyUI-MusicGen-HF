@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comfyui-musicgen-hf"
+version = "1.0.0"
+authors = [
+    {name = "crashy"},
+]
+description = "Facebook's MusicGen integration for ComfyUI using Hugging Face Transformers"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Sound/Audio :: Sound Synthesis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["comfyui", "musicgen", "audio", "generation", "ai", "music"]
+dependencies = [
+    "transformers>=4.30.0",
+    "accelerate>=0.20.0",
+    "scipy>=1.10.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "av>=15.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/crashy/ComfyUI-MusicGen-HF"
+"Bug Reports" = "https://github.com/crashy/ComfyUI-MusicGen-HF/issues"
+"Source" = "https://github.com/crashy/ComfyUI-MusicGen-HF"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.md", "*.txt"]

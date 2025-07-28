@@ -1,0 +1,25 @@
+{
+    "custom_nodes": [
+        {
+            "title": "ComfyUI-MusicGen-HF",
+            "reference": "https://github.com/crashy/ComfyUI-MusicGen-HF",
+            "files": [
+                "nodes.py",
+                "__init__.py"
+            ],
+            "install_type": "git-clone",
+            "description": "Facebook's MusicGen integration for ComfyUI using Hugging Face Transformers. Supports text-to-music and audio-to-music generation with CUDA, MPS, and CPU support.",
+            "author": "crashy",
+            "nodename_pattern": "HuggingFaceMusicGen|SaveAudioStandalone|LoadAudioStandalone|MusicGenAudioToFile",
+            "category": "audio",
+            "pip": [
+                "transformers>=4.30.0",
+                "accelerate>=0.20.0",
+                "scipy>=1.10.0",
+                "torch>=2.0.0",
+                "torchaudio>=2.0.0",
+                "av>=15.0.0"
+            ]
+        }
+    ]
+}
