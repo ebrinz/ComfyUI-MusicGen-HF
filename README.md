@@ -9,6 +9,9 @@ A **standalone** ComfyUI custom node package for Facebook's MusicGen using Huggi
 - 🍎 **Apple Silicon Support** - Full MPS acceleration for M1/M2/M3 Macs
 - 🚀 **Multi-Device Support** - Automatic device detection (CUDA/MPS/CPU)
 - 🎚️ **Advanced Controls** - Guidance scale, sampling, temperature controls
+- 🎼 **Musical Timing Control** - BPM-based duration with beat precision
+- 🔄 **Audio Preview & Looping** - Preview with looping and queue management
+- 🎧 **Smooth Audio Transitions** - Crossfading and seamless audio playback
 - 📁 **Multi-Format Export** - Save as WAV, FLAC, MP3, or Opus with quality settings
 - 🔧 **Standalone Operation** - No dependencies on ComfyUI core modifications
 - 🎧 **Built-in Audio Utilities** - Complete audio loading and saving capabilities
@@ -50,29 +53,100 @@ pip install -r requirements.txt
 
 ### Available Nodes
 
-- **MusicGen (Hugging Face)** - Main text-to-music generation node
+#### Core Generation
+- **MusicGen (Hugging Face)** - Main text-to-music generation node with conditioning support
+- **BPM Duration Calculator** - Musical timing control with BPM and beat precision
+
+#### Audio Processing & Preview
+- **Looping Audio Preview** - Preview audio with looping and queue management
+- **Smooth Audio Queue** - Crossfading and seamless audio transitions with precise timing
+
+#### Audio I/O
 - **Save Audio (WAV/FLAC/MP3/Opus)** - Advanced audio saver with format options
 - **Load Audio File** - Load audio files for conditioning or processing
 - **Save MusicGen Audio (Legacy)** - Simplified audio saver for basic use
 
-### Basic Workflow
+## 🔄 Node System Overview
 
-1. **Add MusicGen Node:**
-   - In ComfyUI, add `MusicGen (Hugging Face)` node
-   - Enter your text prompt (e.g., "upbeat electronic music with drums")
-   - Choose model size (start with "small" for faster generation)
-   - Set duration (1-30 seconds)
+```mermaid
+flowchart TD
+    A[Text Prompt] --> B[MusicGen HF]
+    C[BPM Duration Calculator] --> B
+    D[Load Audio File] --> E[Looping Audio Preview]
+    E --> F[Smooth Audio Queue]
+    E --> B
+    B --> G[Save Audio]
+    F --> H[Audio Preview/Playback]
+    B --> I[Generated Audio]
+    
+    subgraph "Musical Timing"
+        C
+        J[BPM: 120.0]
+        K[Beats: 16.0]
+        L[Time Signature: 4/4]
+        J --> C
+        K --> C
+        L --> C
+    end
+    
+    subgraph "Audio Processing"
+        E
+        F
+        M[Loop Count: 3x]
+        N[Queue Mode: ON/OFF]
+        O[Crossfade: 0.5s]
+        P[Target Duration]
+        M --> E
+        N --> E
+        O --> F
+        P --> F
+    end
+    
+    subgraph "Generation Engine"
+        B
+        Q[Model: small/medium/large]
+        R[Guidance Scale: 3.0]
+        S[Temperature: 1.0]
+        T[Conditioning Audio]
+        Q --> B
+        R --> B
+        S --> B
+        T --> B
+    end
+    
+    style B fill:#ff9999
+    style C fill:#99ccff
+    style E fill:#99ff99
+    style F fill:#ffcc99
+```
 
-2. **Add Save Node:**
-   - Add `Save Audio (WAV/FLAC/MP3/Opus)` node for full format control
-   - OR add `Save MusicGen Audio (Legacy)` for simple saving
-   - Connect the audio output from MusicGen
-   - Choose format (WAV, FLAC, MP3, Opus) and quality settings
+### Workflow Patterns
 
-3. **Generate:**
-   - Click "Queue Prompt"
-   - First run will download the model (~1.5GB for small)
-   - Generated audio saves to `ComfyUI/output/`
+#### 1. Basic Text-to-Music
+```
+Text Prompt → MusicGen → Save Audio
+```
+
+#### 2. Musical Timing Control
+```
+BPM Calculator → MusicGen → Save Audio
+     ↑
+(120 BPM, 16 beats, 4/4 time)
+```
+
+#### 3. Audio Conditioning with Preview
+```
+Load Audio → Looping Preview → MusicGen → Save Audio
+                    ↓
+            conditioning_audio
+```
+
+#### 4. Smooth Playback System
+```
+Generated Audio → Smooth Audio Queue → Preview/Playback
+                       ↑
+            (Crossfade, Precise Timing)
+```
 
 ### Audio Conditioning (Optional)
 
@@ -107,8 +181,12 @@ The node automatically detects and uses the best available device:
 | **MP3** | 128k, 192k, 320k, V0 | Good compression, wide compatibility |
 | **Opus** | 64k, 96k, 128k, 192k, 320k | Best compression, modern standard |
 
-### Parameters
+## 📚 Node Documentation
 
+### MusicGen (Hugging Face)
+Main audio generation engine with enhanced conditioning support.
+
+**Parameters:**
 - **prompt**: Text description of the music to generate
 - **model_size**: small/medium/large model variants
 - **duration**: Length of generated audio (1-30 seconds)
@@ -118,14 +196,122 @@ The node automatically detects and uses the best available device:
 - **seed**: Random seed for reproducible generation
 - **temperature**: Sampling randomness (0.1-2.0)
 - **conditioning_audio**: Optional reference audio for continuation
+- **duration_override**: Duration input from BPM Calculator (0 = use manual duration)
+
+### BPM Duration Calculator
+Converts musical timing (BPM + beats) to precise duration for MusicGen.
+
+**Parameters:**
+- **bpm**: Beats per minute (60.0-200.0, step: 0.1)
+- **beats**: Number of beats to generate (1.0-64.0, step: 0.25)
+- **time_signature**: Musical time signature (4/4, 3/4, 6/8, 2/4)
+
+**Outputs:**
+- **duration**: Calculated duration in seconds
+- **info**: Musical timing information and token calculations
+
+**Usage Example:**
+- 120 BPM × 16 beats = 8.0 seconds
+- Automatically caps duration to respect 1503 token limit
+- Provides precise musical timing for consistent generation
+
+### Looping Audio Preview
+Enhanced audio preview with looping and intelligent queue management.
+
+**Parameters:**
+- **audio**: Input audio to preview
+- **loop_count**: Number of preview loops (1-10)
+- **enable_preview**: Toggle preview playback
+- **queue_mode**: Wait for current audio to finish before playing new audio
+- **instance_id**: Unique identifier for multiple preview nodes
+
+**Outputs:**
+- **looped_preview**: Audio repeated for extended preview
+- **conditioning_audio**: Pass-through for MusicGen conditioning
+- **info**: Queue status, timing, and preview information
+
+### Smooth Audio Queue
+Advanced audio processing with crossfading and precise timing control.
+
+**Parameters:**
+- **audio**: Input audio to process
+- **target_duration**: Precise duration target (0 = use original, step: 0.01)
+- **crossfade_duration**: Smooth transition time between clips (0-2.0s)
+- **queue_id**: Identifier for multiple audio streams
+- **auto_play**: Automatically handle transitions when audio changes
+
+**Outputs:**
+- **queued_audio**: Processed audio with smooth transitions
+- **conditioning_audio**: Original audio for MusicGen
+- **info**: Processing status, timing, and queue information
+
+**Features:**
+- **Duration Validation**: Rounds to token boundaries (~0.02s) for optimal generation
+- **Post-processing**: Trims or pads audio to exact target duration
+- **Crossfading**: Creates smooth transitions between audio clips
+- **Queue Management**: Handles multiple audio clips with seamless playback
+
+## 🎼 Advanced Workflow Examples
+
+### 1. Musical Loop Creation
+```
+BPM Calculator (120 BPM, 8 beats, 4/4) → MusicGen → Looping Preview (3x loops)
+                                                      ↓
+                                                Smooth Queue → Final Audio
+```
+Perfect for creating seamless musical loops with precise timing.
+
+### 2. Audio Continuation Chain
+```
+Load Audio → Looping Preview → MusicGen → Smooth Queue → MusicGen (next) → Save
+     ↓           ↓                ↓            ↓
+conditioning  preview      generation_1   transition   generation_2
+```
+Create extended compositions by chaining generations with smooth transitions.
+
+### 3. Multi-Track Preview System
+```
+Track 1: Load Audio → Looping Preview (instance: "track1") → Preview 1
+Track 2: Generated → Looping Preview (instance: "track2") → Preview 2
+Track 3: BPM Calc → MusicGen → Looping Preview (instance: "track3") → Preview 3
+```
+Preview multiple audio sources simultaneously with independent queue management.
+
+### 4. Precise Duration Matching
+```
+Target Duration: 7.583s
+                ↓
+Audio Source → Smooth Queue (target_duration: 7.583) → Exact 7.583s Output
+```
+Create audio clips with sample-accurate duration for synchronization.
+
+### 5. Crossfade DJ-Style Mixing
+```
+Track A → Smooth Queue (crossfade: 2.0s, queue_id: "mix") → Mixed Output
+Track B → Smooth Queue (crossfade: 2.0s, queue_id: "mix") → Mixed Output
+```
+Create smooth DJ-style transitions between different audio sources.
 
 ## Example Prompts
 
+### Musical Styles
 - "80s pop track with bassy drums and synth"
-- "classical piano piece in minor key"
+- "classical piano piece in minor key" 
 - "upbeat jazz with saxophone solo"
 - "ambient electronic soundscape"
 - "acoustic guitar fingerpicking folk song"
+
+### Genre-Specific with BPM
+- "house music at 128 BPM with four-on-the-floor kick"
+- "slow blues at 70 BPM with guitar and harmonica"
+- "drum and bass at 174 BPM with heavy sub bass"
+- "waltz at 180 BPM in 3/4 time signature"
+
+### Mood and Atmosphere
+- "melancholic indie folk with reverb-heavy vocals"
+- "energetic punk rock with distorted guitars"
+- "peaceful nature sounds with gentle piano"
+- "epic orchestral soundtrack with brass section"
 
 ## Troubleshooting
 
@@ -138,19 +324,38 @@ If you encounter MPS errors:
 - Start with "small" model
 - Reduce `max_new_tokens` 
 - Lower `duration`
+- Disable preview loops if memory constrained
 
 ### Model Download
 - First run downloads models to `~/.cache/huggingface/`
 - Ensure stable internet connection
 - Models are cached for subsequent use
 
+### Node-Specific Issues
+
+#### BPM Duration Calculator
+- **Duration too long**: Automatically capped at token limit (30.06s max)
+- **Precision issues**: Durations rounded to ~0.02s token boundaries
+- **Time signature**: Only affects measure calculations, not duration
+
+#### Looping Audio Preview
+- **Queue not working**: Check `instance_id` is unique for multiple nodes
+- **Audio not looping**: Verify `loop_count > 1` and `enable_preview = True`
+- **Memory usage**: High loop counts create large audio tensors
+
+#### Smooth Audio Queue
+- **Crossfade artifacts**: Reduce `crossfade_duration` for short audio clips
+- **Timing drift**: Use `target_duration` for precise synchronization
+- **Queue conflicts**: Use different `queue_id` for independent streams
+
 ## 📋 Requirements
 
 ### System Requirements
 - **Python**: 3.8+
-- **RAM**: 8GB+ recommended (4GB minimum)
-- **Storage**: 2-4GB for model cache
+- **RAM**: 8GB+ recommended (4GB minimum, 12GB+ for smooth queue processing)
+- **Storage**: 2-4GB for model cache + additional space for audio processing
 - **GPU**: Optional but recommended (CUDA/MPS support)
+- **Audio**: System audio output for preview functionality
 
 ### Dependencies
 All dependencies are automatically installed via `requirements.txt`:
@@ -167,10 +372,38 @@ All dependencies are automatically installed via `requirements.txt`:
 - ✅ **Linux** (CUDA/CPU)
 - ✅ **ComfyUI** - All recent versions
 
+## 🆕 Version History
+
+### v1.1.0 (Latest)
+- ✅ **BPM Duration Calculator** - Musical timing with beat precision
+- ✅ **Looping Audio Preview** - Enhanced preview with queue management  
+- ✅ **Smooth Audio Queue** - Crossfading and precise timing control
+- ✅ **Enhanced MusicGen** - Duration override and improved conditioning
+- ✅ **Advanced Workflows** - Multi-node audio processing pipelines
+
+### v1.0.0
+- ✅ Basic MusicGen text-to-audio generation
+- ✅ Multi-format audio export (WAV/FLAC/MP3/Opus)
+- ✅ Device optimization (CUDA/MPS/CPU)
+- ✅ Audio loading and conditioning support
+
 ## 🔗 Links
 
 - [MusicGen Paper](https://arxiv.org/abs/2306.05284)
 - [Hugging Face Model Hub](https://huggingface.co/facebook/musicgen-small)
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- [Mermaid Flowchart Documentation](https://mermaid.js.org/)
+
+---
+
+## 🎯 Quick Start Guide
+
+1. **Install**: Clone repo + `pip install -r requirements.txt`
+2. **Basic**: Text → MusicGen → Save Audio  
+3. **Musical**: BPM Calculator → MusicGen → Save Audio
+4. **Preview**: Audio → Looping Preview → MusicGen
+5. **Advanced**: Audio → Smooth Queue → Crossfaded Output
+
+**Ready to create music? Start with the Basic workflow and explore the advanced features!** 🎵
 
 ---
