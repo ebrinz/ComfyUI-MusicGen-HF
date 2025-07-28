@@ -1,0 +1,7 @@
+
+transformers>=4.30.0
+accelerate>=0.20.0
+scipy>=1.10.0
+torch>=2.0.0
+torchaudio>=2.0.0
+av>=15.0.0
