@@ -15,7 +15,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 # This is required for ComfyUI to recognize the node package
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
 # Optional: Add version info
 __version__ = "1.0.0"
