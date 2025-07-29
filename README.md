@@ -60,6 +60,7 @@ pip install -r requirements.txt
 #### Audio Processing & Preview
 - **Looping Audio Preview** - Preview audio with looping and queue management
 - **Smooth Audio Queue** - Crossfading and seamless audio transitions with precise timing
+- **Professional Loop Transition** - Advanced loop transitions with beat-matching and professional audio processing
 
 #### Audio I/O
 - **Save Audio (WAV/FLAC/MP3/Opus)** - Advanced audio saver with format options
@@ -251,6 +252,36 @@ Advanced audio processing with crossfading and precise timing control.
 - **Crossfading**: Creates smooth transitions between audio clips
 - **Queue Management**: Handles multiple audio clips with seamless playback
 
+### Professional Loop Transition
+Professional-grade loop transitions designed for dance music workflows.
+
+**Parameters:**
+- **audio**: Input audio to process
+- **bpm**: BPM for beat-aligned transitions (60.0-200.0)
+- **transition_type**: Algorithm for creating transitions
+  - `beat_match`: Standard beat-aligned crossfade (best for rhythmic music)
+  - `phrase_match`: Same as beat_match but for phrase boundaries
+  - `zero_cross`: Finds optimal zero-crossing points (cleanest cuts)
+  - `power_match`: Matches power levels before crossfading (best for volume consistency)
+- **transition_beats**: Duration of transition in beats (0.25-8.0)
+- **loop_id**: Identifier for multiple audio streams
+- **auto_normalize**: Automatically balance audio levels
+- **dc_offset_removal**: Remove DC bias for cleaner audio
+- **crossfade_curve**: Shape of transition curve (linear/equal_power/exponential/s_curve)
+- **phase_align**: Align audio phases for smoother transitions
+
+**Outputs:**
+- **looped_audio**: Audio with professional transition applied
+- **conditioning_audio**: Original audio for MusicGen conditioning
+- **info**: Processing status and transition details
+
+**Advanced Features:**
+- **DC Offset Removal**: Removes unwanted DC bias that can cause pops/clicks
+- **Phase Alignment**: Analyzes waveforms and aligns phases to reduce phase cancellation
+- **Zero-Crossing Detection**: Finds natural break points in audio waveforms
+- **Power Matching**: Balances volume levels for consistent transitions
+- **Beat-Aware Processing**: Creates transitions aligned to musical beats
+
 ## 🎼 Advanced Workflow Examples
 
 ### 1. Musical Loop Creation
@@ -291,6 +322,62 @@ Track A → Smooth Queue (crossfade: 2.0s, queue_id: "mix") → Mixed Output
 Track B → Smooth Queue (crossfade: 2.0s, queue_id: "mix") → Mixed Output
 ```
 Create smooth DJ-style transitions between different audio sources.
+
+### 6. Professional Dance Music Loops
+```
+Generated Audio → Professional Loop Transition (128 BPM, beat_match, 1.0 beats) → Seamless Loop
+```
+Create professional-quality loops with beat-aligned transitions.
+
+## 🎧 Professional Loop Transition Usage Guide
+
+### Best Practices by Genre
+
+#### **House/Techno Music (128 BPM)**
+```
+bpm: 128.0
+transition_type: "beat_match"
+transition_beats: 1.0
+crossfade_curve: "equal_power"
+phase_align: True
+```
+
+#### **Breakbeat/DnB (174 BPM)**
+```
+bpm: 174.0
+transition_type: "power_match"
+transition_beats: 0.5
+crossfade_curve: "s_curve"
+phase_align: True
+```
+
+#### **Ambient/Downtempo**
+```
+transition_type: "zero_cross"
+transition_beats: 2.0-4.0
+crossfade_curve: "exponential"
+auto_normalize: True
+```
+
+### Transition Types Explained
+
+1. **beat_match**: Standard DJ-style beat matching - best for rhythmic music
+2. **zero_cross**: Finds natural break points in the audio waveform - cleanest for any genre
+3. **power_match**: Balances volume levels first - best when audio levels vary significantly
+4. **phrase_match**: Same as beat_match but intended for phrase boundaries (4, 8, 16 beats)
+
+### Common Connection Patterns
+
+1. **Basic Loop**: `HuggingFaceMusicGen` → `ProfessionalLoopTransition` → `SaveAudioStandalone`
+2. **With Preview**: `HuggingFaceMusicGen` → `ProfessionalLoopTransition` → `LoopingAudioPreview`
+3. **Conditioning Chain**: `ProfessionalLoopTransition` → `AudioOutputToConditioningQueue` → `HuggingFaceMusicGen`
+
+### Troubleshooting Professional Transitions
+
+- **Choppy transitions**: Increase `transition_beats` or try `zero_cross` mode
+- **Volume jumps**: Enable `power_match` and `auto_normalize`
+- **Phase issues**: Enable `phase_align` and use `equal_power` curve
+- **Artifacts**: Enable `dc_offset_removal` and try `s_curve` crossfading
 
 ## Example Prompts
 
@@ -347,6 +434,14 @@ If you encounter MPS errors:
 - **Crossfade artifacts**: Reduce `crossfade_duration` for short audio clips
 - **Timing drift**: Use `target_duration` for precise synchronization
 - **Queue conflicts**: Use different `queue_id` for independent streams
+
+#### Professional Loop Transition
+- **Choppy transitions**: Increase `transition_beats` or try `zero_cross` mode
+- **Volume jumps**: Enable `power_match` and `auto_normalize`
+- **Phase issues**: Enable `phase_align` and use `equal_power` curve
+- **Artifacts**: Enable `dc_offset_removal` and try `s_curve` crossfading
+- **BPM mismatch**: Ensure BPM parameter matches your audio's actual tempo
+- **Loop state issues**: Use different `loop_id` for independent transition chains
 
 ## 📋 Requirements
 

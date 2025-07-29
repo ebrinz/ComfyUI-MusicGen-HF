@@ -125,17 +125,40 @@ class HuggingFaceMusicGen:
             try:
                 # Use ComfyUI's device management
                 device = comfy.model_management.get_torch_device()
-                return str(device).split(':')[0]  # Extract device type (cuda, mps, cpu)
-            except:
-                pass
+                device_str = str(device).split(':')[0]  # Extract device type (cuda, mps, cpu)
+                
+                # Verify CUDA is actually available if ComfyUI says to use it
+                if device_str == "cuda" and not torch.cuda.is_available():
+                    print("⚠️ ComfyUI suggested CUDA but CUDA not available, falling back to CPU")
+                    return "cpu"
+                    
+                return device_str
+            except Exception as e:
+                print(f"⚠️ ComfyUI device detection failed: {e}")
         
-        # Fallback to manual detection
+        # Fallback to manual detection with thorough CUDA checking
         if torch.cuda.is_available():
-            return "cuda"
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            return "mps"
-        else:
-            return "cpu"
+            try:
+                # Test CUDA functionality
+                torch.cuda.device_count()
+                torch.cuda.get_device_name(0)
+                print(f"✅ CUDA detected: {torch.cuda.get_device_name(0)}")
+                return "cuda"
+            except Exception as e:
+                print(f"⚠️ CUDA available but not functional: {e}, falling back")
+        
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            try:
+                # Test MPS functionality
+                test_tensor = torch.zeros(1).to("mps")
+                del test_tensor
+                print("✅ MPS detected and functional")
+                return "mps"
+            except Exception as e:
+                print(f"⚠️ MPS available but not functional: {e}, falling back")
+        
+        print("✅ Using CPU device")
+        return "cpu"
     
     def _move_to_device(self, tensor_or_dict):
         """Safely move tensors to device, handling MPS limitations"""
@@ -159,39 +182,22 @@ class HuggingFaceMusicGen:
         if self.model is None or self.current_model_size != model_size:
             print(f"Loading MusicGen-{model_size} on {self.device}...")
             
-            # Try to find local model first
-            local_model_path = None
-            if COMFY_AVAILABLE:
-                try:
-                    # Check for local models in ComfyUI directory
-                    local_models = folder_paths.get_filename_list("musicgen")
-                    model_candidates = [f for f in local_models if f"musicgen-{model_size}" in f.lower()]
-                    if model_candidates:
-                        local_model_path = folder_paths.get_full_path("musicgen", model_candidates[0])
-                        print(f"📁 Found local model: {local_model_path}")
-                except:
-                    pass
-            
-            # Determine model source
-            if local_model_path and os.path.exists(local_model_path):
-                model_name = local_model_path
-                cache_dir = None
-                self._loaded_from_local = True
-                print(f"🔄 Loading from ComfyUI models directory")
-            else:
-                model_name = f"facebook/musicgen-{model_size}"
-                cache_dir = MUSICGEN_CACHE_DIR
-                self._loaded_from_local = False
-                print(f"🌐 Downloading from HuggingFace Hub to: {cache_dir}")
+            # Use HuggingFace model identifier and let it handle caching automatically
+            model_name = f"facebook/musicgen-{model_size}"
+            cache_dir = MUSICGEN_CACHE_DIR
+            self._loaded_from_local = False
+            print(f"🌐 Loading MusicGen model (will use cache if available): {cache_dir}")
             
             try:
                 # Load processor (CPU only, no device needed)
+                print(f"🔧 Loading processor with PyTorch {torch.__version__}")
                 self.processor = AutoProcessor.from_pretrained(
                     model_name, 
-                    cache_dir=cache_dir
+                    cache_dir=cache_dir,
+                    use_safetensors=True  # Force SafeTensors usage
                 )
                 
-                # Get optimal dtype for the device
+                # Get optimal dtype for the device with CUDA capability checking
                 if COMFY_AVAILABLE:
                     try:
                         # Use ComfyUI's dtype selection
@@ -199,33 +205,78 @@ class HuggingFaceMusicGen:
                     except:
                         dtype = torch.float32
                 else:
-                    # Fallback dtype selection
+                    # Fallback dtype selection with CUDA capability check
                     if self.device == "cuda":
-                        dtype = torch.float16
+                        try:
+                            # Check if CUDA supports float16
+                            if torch.cuda.get_device_capability(0)[0] >= 7:  # Tensor cores for better fp16
+                                dtype = torch.float16
+                                print("✅ Using float16 with Tensor Core support")
+                            else:
+                                dtype = torch.float32
+                                print("ℹ️ Using float32 (no Tensor Core support)")
+                        except:
+                            dtype = torch.float32
+                            print("ℹ️ Using float32 (CUDA capability check failed)")
                     else:
                         dtype = torch.float32
                 
                 print(f"💾 Using dtype: {dtype}")
                 
-                # Load model with unified settings
+                # Load model with unified settings and force SafeTensors
+                print(f"🔧 Loading model with dtype {dtype}")
                 self.model = MusicgenForConditionalGeneration.from_pretrained(
                     model_name,
                     torch_dtype=dtype,
                     low_cpu_mem_usage=True,
-                    cache_dir=cache_dir
+                    cache_dir=cache_dir,
+                    use_safetensors=True  # Force SafeTensors usage
                 )
                 
-                # Move model to device - ensures all params & buffers are on target device
-                self.model = self.model.to(self.device, dtype=None)
-                self.model.eval()  # Set to evaluation mode
-                self.current_model_size = model_size
-                
-                # Verify all parameters and buffers are on the correct device
-                for name, buf in self.model.named_buffers():
-                    if buf.device.type != self.device:
-                        print(f"⚠️ Warning: {name} buffer still on {buf.device}, expected {self.device}")
-                
-                print(f"✅ MusicGen-{model_size} loaded successfully on {self.device}")
+                # Move model to device with robust error handling
+                try:
+                    if self.device == "cuda":
+                        # Additional CUDA memory checks
+                        if hasattr(torch.cuda, 'memory_allocated'):
+                            print(f"🔍 CUDA memory before loading: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB")
+                        
+                        # Clear cache before loading large model
+                        torch.cuda.empty_cache()
+                    
+                    self.model = self.model.to(self.device, dtype=None)
+                    self.model.eval()  # Set to evaluation mode
+                    self.current_model_size = model_size
+                    
+                    if self.device == "cuda":
+                        # Check CUDA memory after loading
+                        if hasattr(torch.cuda, 'memory_allocated'):
+                            print(f"🔍 CUDA memory after loading: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB")
+                    
+                    # Verify all parameters and buffers are on the correct device
+                    device_issues = []
+                    for name, buf in self.model.named_buffers():
+                        if buf.device.type != self.device:
+                            device_issues.append(f"{name}: {buf.device}")
+                    
+                    if device_issues:
+                        print(f"⚠️ Warning: Some buffers not on expected device {self.device}:")
+                        for issue in device_issues[:3]:  # Show first 3
+                            print(f"   {issue}")
+                        if len(device_issues) > 3:
+                            print(f"   ... and {len(device_issues) - 3} more")
+                    
+                    print(f"✅ MusicGen-{model_size} loaded successfully on {self.device}")
+                    
+                except RuntimeError as e:
+                    if "out of memory" in str(e).lower() and self.device == "cuda":
+                        print(f"⚠️ CUDA out of memory, falling back to CPU: {e}")
+                        self.device = "cpu"
+                        self.model = self.model.to("cpu")
+                        self.model.eval()
+                        self.current_model_size = model_size
+                        print(f"✅ MusicGen-{model_size} loaded successfully on CPU (fallback)")
+                    else:
+                        raise e
                 
                 # Integrate with ComfyUI's memory management
                 if COMFY_AVAILABLE:
@@ -237,9 +288,31 @@ class HuggingFaceMusicGen:
                 
             except Exception as e:
                 print(f"❌ Error loading model: {e}")
-                # Fallback to CPU if device loading fails
-                if self.device != "cpu":
-                    print("Falling back to CPU...")
+                
+                # Try alternative loading methods
+                if "torch.load" in str(e) or "safetensors" in str(e):
+                    print("🔄 Trying alternative loading method...")
+                    try:
+                        # Try without use_safetensors parameter
+                        self.processor = AutoProcessor.from_pretrained(
+                            model_name, 
+                            cache_dir=cache_dir
+                        )
+                        self.model = MusicgenForConditionalGeneration.from_pretrained(
+                            model_name,
+                            torch_dtype=torch.float32,
+                            low_cpu_mem_usage=True,
+                            cache_dir=cache_dir,
+                            trust_remote_code=True  # May help with security restrictions
+                        )
+                        self.model = self.model.to(self.device)
+                        print("✅ Alternative loading method succeeded")
+                    except Exception as e2:
+                        print(f"❌ Alternative method also failed: {e2}")
+                        raise e2
+                elif self.device != "cpu":
+                    # Fallback to CPU if device loading fails
+                    print("🔄 Falling back to CPU...")
                     self.device = "cpu"
                     self.model = MusicgenForConditionalGeneration.from_pretrained(
                         model_name, 
@@ -330,8 +403,18 @@ class HuggingFaceMusicGen:
                 )
             
             # Move inputs to device - ensure all tensors are on same device as model
-            inputs = {k: v.to(self.device, non_blocking=True) if torch.is_tensor(v) else v
-                      for k, v in inputs.items()}
+            try:
+                inputs = {k: v.to(self.device, non_blocking=True) if torch.is_tensor(v) else v
+                          for k, v in inputs.items()}
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower() and self.device == "cuda":
+                    print(f"⚠️ CUDA out of memory during input processing, clearing cache...")
+                    torch.cuda.empty_cache()
+                    # Try again with blocking transfer
+                    inputs = {k: v.to(self.device, non_blocking=False) if torch.is_tensor(v) else v
+                              for k, v in inputs.items()}
+                else:
+                    raise e
             
             # Calculate max_new_tokens based on effective duration
             # MusicGen generates approximately 50 tokens per second at 32kHz
@@ -392,7 +475,7 @@ class HuggingFaceMusicGen:
                 conditioning_info = "✅ Used conditioning audio"
             
             # Model path info
-            model_location = "ComfyUI models directory" if hasattr(self, '_loaded_from_local') and self._loaded_from_local else "HuggingFace cache"
+            model_location = "HuggingFace cache (ComfyUI managed)"
             
             info = f"Generated {actual_duration:.1f}s audio using MusicGen-{model_size} on {self.device}\n"
             info += f"Model location: {model_location}\n"
