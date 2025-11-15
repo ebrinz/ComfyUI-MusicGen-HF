@@ -5,6 +5,15 @@ Audio preview and queue management nodes
 import torch
 import time
 import hashlib
+import os
+import io
+import random
+import av
+try:
+    import folder_paths
+    COMFY_AVAILABLE = True
+except ImportError:
+    COMFY_AVAILABLE = False
 
 
 class LoopingAudioPreview:
@@ -13,7 +22,17 @@ class LoopingAudioPreview:
     Also provides pass-through output for conditioning audio
     Supports queuing to wait for current playback to finish
     """
-    
+
+    def __init__(self):
+        if COMFY_AVAILABLE:
+            self.output_dir = folder_paths.get_temp_directory()
+            self.type = "temp"
+            self.prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
+        else:
+            self.output_dir = "/tmp"
+            self.type = "temp"
+            self.prefix_append = "_temp_preview"
+
     # Class-level state for tracking playback timing
     _playback_state = {}
     _audio_queue = {}
@@ -43,16 +62,17 @@ class LoopingAudioPreview:
                     "default": "default",
                     "tooltip": "Unique identifier for this preview instance (for multiple nodes)"
                 })
-            }
+            },
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
     
     RETURN_TYPES = ("AUDIO", "AUDIO", "STRING")
     RETURN_NAMES = ("looped_preview", "conditioning_audio", "info")
     FUNCTION = "create_looping_preview"
     CATEGORY = "audio/musicgen"
-    OUTPUT_NODE = True
+    OUTPUT_NODE = False
     
-    def create_looping_preview(self, audio, loop_count, enable_preview, queue_mode, instance_id):
+    def create_looping_preview(self, audio, loop_count, enable_preview, queue_mode, instance_id, prompt=None, extra_pnginfo=None):
         try:
             # Extract waveform and sample rate
             waveform = audio["waveform"]
@@ -151,15 +171,74 @@ class LoopingAudioPreview:
             info += f"Status: {queue_status}\n"
             info += f"Instance: {instance_id}\n"
             info += f"Shape: {list(waveform.shape)}"
-            
+
+            # Just return the audio - no preview for now
             return (looped_audio, conditioning_audio, info)
-            
+
         except Exception as e:
             error_msg = f"Error in looping preview: {str(e)}"
             print(error_msg)
-            
+            import traceback
+            traceback.print_exc()
+
             # Return original audio on error
             return (audio, audio, error_msg)
+
+    def _save_audio_preview(self, audio, instance_id):
+        """Save audio to temp directory and return UI result for ComfyUI preview"""
+        try:
+            filename_prefix = f"preview_{instance_id}"
+            full_output_folder = self.output_dir
+
+            # Create unique filename
+            counter = 0
+            filename = f"{filename_prefix}_{counter:05}_.wav"
+            output_path = os.path.join(full_output_folder, filename)
+
+            # Overwrite the same file for this instance (no need to accumulate temp files)
+            output_path = os.path.join(full_output_folder, f"{filename_prefix}.wav")
+
+            # Save audio using PyAV
+            waveform = audio["waveform"].cpu()
+            sample_rate = audio["sample_rate"]
+
+            output_buffer = io.BytesIO()
+            output_container = av.open(output_buffer, mode='w', format='wav')
+
+            out_stream = output_container.add_stream('pcm_s16le', rate=sample_rate)
+
+            for batch_waveform in waveform:
+                frame = av.AudioFrame.from_ndarray(
+                    batch_waveform.movedim(0, 1).reshape(1, -1).float().numpy(),
+                    format='flt',
+                    layout='mono' if batch_waveform.shape[0] == 1 else 'stereo'
+                )
+                frame.sample_rate = sample_rate
+                frame.pts = 0
+                output_container.mux(out_stream.encode(frame))
+
+            # Flush encoder
+            output_container.mux(out_stream.encode(None))
+            output_container.close()
+
+            # Write to file
+            output_buffer.seek(0)
+            with open(output_path, 'wb') as f:
+                f.write(output_buffer.getbuffer())
+
+            # Return UI result
+            return {
+                "audio": [{
+                    "filename": os.path.basename(output_path),
+                    "subfolder": "",
+                    "type": self.type
+                }]
+            }
+        except Exception as e:
+            print(f"Error saving preview audio: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
 
 
 class SmoothAudioQueue:

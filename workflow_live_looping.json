@@ -1,0 +1,195 @@
+{
+  "last_node_id": 6,
+  "last_link_id": 8,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "BPMDurationInput",
+      "pos": [100, 100],
+      "size": [300, 150],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "duration",
+          "type": "FLOAT",
+          "links": [1, 5],
+          "slot_index": 0
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BPMDurationInput"
+      },
+      "widgets_values": [
+        120.0,
+        16.0,
+        "4/4"
+      ],
+      "title": "🎵 BPM Timing (4 bars @ 120 BPM)"
+    },
+    {
+      "id": 2,
+      "type": "HuggingFaceMusicGen",
+      "pos": [100, 300],
+      "size": [400, 500],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "conditioning_audio",
+          "type": "AUDIO",
+          "link": 4
+        },
+        {
+          "name": "duration",
+          "type": "FLOAT",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [2],
+          "slot_index": 0
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HuggingFaceMusicGen"
+      },
+      "widgets_values": [
+        "small",
+        8.0,
+        3.0,
+        true,
+        256,
+        42,
+        "groovy bassline with drums, loopable, seamless",
+        null,
+        1.0,
+        0.0
+      ],
+      "title": "🎹 MusicGen - Loop Generator",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 3,
+      "type": "LoopingAudioPreview",
+      "pos": [600, 300],
+      "size": [400, 230],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "looped_preview",
+          "type": "AUDIO",
+          "links": [3],
+          "slot_index": 0
+        },
+        {
+          "name": "conditioning_audio",
+          "type": "AUDIO",
+          "links": [4],
+          "slot_index": 1
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoopingAudioPreview"
+      },
+      "widgets_values": [
+        1,
+        true,
+        true,
+        "live_loop"
+      ],
+      "title": "🔊 Live Loop Player (with Queue)",
+      "bgcolor": "#535"
+    },
+    {
+      "id": 4,
+      "type": "SaveAudioStandalone",
+      "pos": [1100, 300],
+      "size": [315, 150],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "filepath",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveAudioStandalone"
+      },
+      "widgets_values": [
+        "live_loop",
+        "wav",
+        "128k"
+      ],
+      "title": "💾 Save Loops"
+    }
+  ],
+  "links": [
+    [1, 1, 0, 2, 2, "FLOAT"],
+    [2, 2, 0, 3, 0, "AUDIO"],
+    [3, 3, 0, 4, 0, "AUDIO"],
+    [4, 3, 1, 2, 1, "AUDIO"]
+  ],
+  "groups": [
+    {
+      "title": "Live Looping Setup - Auto-generates seamless loops using previous loop as conditioning",
+      "bounding": [50, 20, 1420, 850],
+      "color": "#3f789e",
+      "font_size": 24,
+      "locked": false
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.0,
+      "offset": [0, 0]
+    }
+  },
+  "version": 0.4
+}

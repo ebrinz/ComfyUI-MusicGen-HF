@@ -198,10 +198,22 @@ class HuggingFaceMusicGen:
                 )
                 
                 # Get optimal dtype for the device with CUDA capability checking
-                if COMFY_AVAILABLE:
+                # MPS has issues with float16 for MusicGen, so always use float32
+                if self.device == "mps":
+                    dtype = torch.float32
+                    print("ℹ️ Using float32 for MPS (float16 causes numerical instability)")
+                elif COMFY_AVAILABLE:
                     try:
-                        # Use ComfyUI's dtype selection
-                        dtype = comfy.model_management.unet_dtype(self.device)
+                        # Use ComfyUI's dtype selection but exclude BFloat16
+                        # MusicGen doesn't support BFloat16 (causes "Got unsupported ScalarType BFloat16")
+                        dtype = comfy.model_management.unet_dtype(
+                            self.device,
+                            supported_dtypes=[torch.float16, torch.float32]  # Exclude torch.bfloat16
+                        )
+                        if dtype == torch.bfloat16:
+                            # Fallback if unet_dtype still returns bfloat16
+                            dtype = torch.float32
+                            print("ℹ️ Using float32 (BFloat16 not supported by MusicGen)")
                     except:
                         dtype = torch.float32
                 else:
@@ -243,9 +255,12 @@ class HuggingFaceMusicGen:
                         # Clear cache before loading large model
                         torch.cuda.empty_cache()
                     
-                    self.model = self.model.to(self.device, dtype=None)
+                    self.model = self.model.to(self.device, dtype=dtype)
                     self.model.eval()  # Set to evaluation mode
                     self.current_model_size = model_size
+
+                    # Verify model dtype
+                    print(f"🔍 Model dtype after moving to device: {self.model.dtype}")
                     
                     if self.device == "cuda":
                         # Check CUDA memory after loading
@@ -279,12 +294,13 @@ class HuggingFaceMusicGen:
                         raise e
                 
                 # Integrate with ComfyUI's memory management
-                if COMFY_AVAILABLE:
-                    try:
-                        # Inform ComfyUI's memory manager about our model
-                        comfy.model_management.load_models_gpu([self.model])
-                    except:
-                        pass
+                # NOTE: Disabled because it breaks MPS compatibility
+                # if COMFY_AVAILABLE:
+                #     try:
+                #         # Inform ComfyUI's memory manager about our model
+                #         comfy.model_management.load_models_gpu([self.model])
+                #     except:
+                #         pass
                 
             except Exception as e:
                 print(f"❌ Error loading model: {e}")
@@ -323,9 +339,14 @@ class HuggingFaceMusicGen:
                 else:
                     raise e
     
-    def generate_audio(self, model_size, duration, guidance_scale, do_sample, max_new_tokens, seed, 
+    def generate_audio(self, model_size, duration, guidance_scale, do_sample, max_new_tokens, seed,
                       prompt="upbeat electronic music with drums and synth", conditioning_audio=None, temperature=1.0, duration_override=0.0):
-        
+
+        # Handle empty prompt - use default if prompt is empty or whitespace
+        if not prompt or not prompt.strip():
+            prompt = "upbeat electronic music with drums and synth"
+            print(f"ℹ️ Empty prompt detected, using default: '{prompt}'")
+
         # Load model
         self.load_model(model_size)
         
@@ -396,22 +417,30 @@ class HuggingFaceMusicGen:
                 )
             else:
                 # Text-only generation
+                print(f"🔍 Prompt for generation: '{prompt}'")
+                print(f"   Prompt type: {type(prompt)}")
+                print(f"   Prompt length: {len(prompt) if prompt else 0}")
+
                 inputs = self.processor(
                     text=[prompt],
                     padding=True,
                     return_tensors="pt",
                 )
+
+                print(f"   Tokenized input_ids shape: {inputs['input_ids'].shape}")
             
-            # Move inputs to device - ensure all tensors are on same device as model
+            # Move inputs to device - ensure all tensors are on same device and dtype as model
             try:
-                inputs = {k: v.to(self.device, non_blocking=True) if torch.is_tensor(v) else v
+                inputs = {k: v.to(self.device, dtype=self.model.dtype if v.is_floating_point() else None, non_blocking=True)
+                          if torch.is_tensor(v) else v
                           for k, v in inputs.items()}
             except RuntimeError as e:
                 if "out of memory" in str(e).lower() and self.device == "cuda":
                     print(f"⚠️ CUDA out of memory during input processing, clearing cache...")
                     torch.cuda.empty_cache()
                     # Try again with blocking transfer
-                    inputs = {k: v.to(self.device, non_blocking=False) if torch.is_tensor(v) else v
+                    inputs = {k: v.to(self.device, dtype=self.model.dtype if v.is_floating_point() else None, non_blocking=False)
+                              if torch.is_tensor(v) else v
                               for k, v in inputs.items()}
                 else:
                     raise e
@@ -422,16 +451,72 @@ class HuggingFaceMusicGen:
             # Use the calculated tokens for duration, but respect the model's absolute maximum
             tokens_to_use = min(calculated_tokens, 1503)  # 1503 is the model's hard limit
             
+            # Debug: Print generation parameters
+            print(f"🔧 Generation parameters:")
+            print(f"   do_sample: {do_sample}")
+            print(f"   guidance_scale: {guidance_scale}")
+            print(f"   max_new_tokens: {tokens_to_use}")
+            print(f"   temperature: {temperature if do_sample else 1.0}")
+            print(f"   Input keys: {list(inputs.keys())}")
+            for k, v in inputs.items():
+                if torch.is_tensor(v):
+                    print(f"   {k}: shape={v.shape}, dtype={v.dtype}, device={v.device}")
+
             # Generate audio with proper device handling
+            # MPS has numerical stability issues with sampling, so we may need to move to CPU
             with torch.no_grad():
-                audio_values = self.model.generate(
-                    **inputs,
-                    do_sample=do_sample,
-                    guidance_scale=guidance_scale,
-                    max_new_tokens=tokens_to_use,
-                    temperature=temperature if do_sample else 1.0,
-                    pad_token_id=self.model.generation_config.pad_token_id,
-                )
+                try:
+                    audio_values = self.model.generate(
+                        **inputs,
+                        do_sample=do_sample,
+                        guidance_scale=guidance_scale,
+                        max_new_tokens=tokens_to_use,
+                        temperature=temperature if do_sample else 1.0,
+                        pad_token_id=self.model.generation_config.pad_token_id,
+                    )
+                except (RuntimeError, ValueError, IndexError) as e:
+                    error_str = str(e).lower()
+                    print(f"\n❌ Generation error on {self.device}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+
+                    if "probability" in error_str or "inf" in error_str or "nan" in error_str or "index" in error_str:
+                        # MPS has known bugs with torch.multinomial - switch to CPU
+                        print(f"\n⚠️ This is a known MPS bug with torch.multinomial during sampling")
+                        print(f"   Reloading model on CPU for stable generation...")
+
+                        # Clear the model and force reload on CPU
+                        self.model = None
+                        self.processor = None
+                        self.current_model_size = None
+                        self.device = "cpu"
+
+                        # Reload model on CPU
+                        print(f"   Loading fresh model on CPU...")
+                        self.load_model(model_size)
+
+                        # Reprocess inputs on CPU
+                        inputs = self.processor(
+                            text=[prompt],
+                            padding=True,
+                            return_tensors="pt",
+                        )
+                        inputs = {k: v.to("cpu") if torch.is_tensor(v) else v for k, v in inputs.items()}
+
+                        print(f"   Generating on CPU...")
+                        # Generate on CPU
+                        audio_values = self.model.generate(
+                            **inputs,
+                            do_sample=do_sample,
+                            guidance_scale=guidance_scale,
+                            max_new_tokens=tokens_to_use,
+                            temperature=temperature if do_sample else 1.0,
+                            pad_token_id=self.model.generation_config.pad_token_id,
+                        )
+
+                        print(f"✅ Generation succeeded on CPU (will use CPU for future generations)")
+                    else:
+                        raise e
             
             # Convert to numpy and get sampling rate
             sampling_rate = self.model.config.audio_encoder.sampling_rate
