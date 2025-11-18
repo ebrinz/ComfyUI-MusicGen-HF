@@ -71,33 +71,38 @@ class LoopingAudioPreview:
     FUNCTION = "create_looping_preview"
     CATEGORY = "audio/musicgen"
     OUTPUT_NODE = False
+
+    @classmethod
+    def IS_CHANGED(s, **kwargs):
+        # Always re-execute when inputs change
+        return float("nan")
     
     def create_looping_preview(self, audio, loop_count, enable_preview, queue_mode, instance_id, prompt=None, extra_pnginfo=None):
         try:
             # Extract waveform and sample rate
             waveform = audio["waveform"]
             sample_rate = audio["sample_rate"]
-            
+
             # Calculate durations
             original_duration = waveform.shape[-1] / sample_rate
             looped_duration = original_duration * loop_count
-            
+
             # Create a hash of the audio data to detect changes
             audio_hash = hashlib.md5(waveform.cpu().numpy().tobytes()).hexdigest()
             current_time = time.time()
-            
+
             # Handle queue mode logic
             if queue_mode and enable_preview:
                 # Check if this instance has state
                 if instance_id not in self._playback_state:
                     self._playback_state[instance_id] = {"end_time": 0, "last_hash": None}
-                
+
                 state = self._playback_state[instance_id]
-                
+
                 # Check if audio has changed
                 audio_changed = state["last_hash"] != audio_hash
                 playback_finished = current_time >= state["end_time"]
-                
+
                 if audio_changed:
                     if playback_finished:
                         # Start playing new audio immediately
@@ -105,6 +110,7 @@ class LoopingAudioPreview:
                         state["last_hash"] = audio_hash
                         should_play = True
                         queue_status = "Playing new audio"
+                        print(f"🎵 Stored generated audio for queue: {instance_id}")
                     else:
                         # Queue the new audio
                         self._audio_queue[instance_id] = {
@@ -116,6 +122,7 @@ class LoopingAudioPreview:
                         should_play = False
                         remaining_time = state["end_time"] - current_time
                         queue_status = f"Queued (waiting {remaining_time:.1f}s)"
+                        print(f"⏳ Audio queued for {instance_id}, waiting {remaining_time:.1f}s")
                 else:
                     # Same audio, check if we should start queued audio
                     if playback_finished and instance_id in self._audio_queue:
@@ -124,17 +131,18 @@ class LoopingAudioPreview:
                         loop_count = queued["loop_count"]
                         audio_hash = queued["hash"]
                         del self._audio_queue[instance_id]
-                        
+
                         # Update waveform from queued audio
                         waveform = audio["waveform"]
                         sample_rate = audio["sample_rate"]
                         original_duration = waveform.shape[-1] / sample_rate
                         looped_duration = original_duration * loop_count
-                        
+
                         state["end_time"] = current_time + looped_duration
                         state["last_hash"] = audio_hash
                         should_play = True
                         queue_status = "Playing queued audio"
+                        print(f"▶️ Playing queued audio for {instance_id}")
                     else:
                         should_play = not audio_changed
                         queue_status = "Same audio" if should_play else "Waiting for current to finish"
@@ -142,25 +150,25 @@ class LoopingAudioPreview:
                 # No queue mode - always play immediately
                 should_play = True
                 queue_status = "Queue mode disabled"
-            
+
             # Create looped version for preview
             if should_play and loop_count > 1:
                 looped_waveform = waveform.repeat(1, 1, loop_count)
             else:
                 looped_waveform = waveform
-            
+
             # Create looped audio output
             looped_audio = {
                 "waveform": looped_waveform if should_play else torch.zeros_like(waveform),
                 "sample_rate": sample_rate
             }
-            
+
             # Pass-through original audio for conditioning (always available)
             conditioning_audio = {
                 "waveform": waveform,
                 "sample_rate": sample_rate
             }
-            
+
             # Create info string
             info = f"Audio Preview Info:\n"
             info += f"Original duration: {original_duration:.2f}s\n"
@@ -172,8 +180,14 @@ class LoopingAudioPreview:
             info += f"Instance: {instance_id}\n"
             info += f"Shape: {list(waveform.shape)}"
 
-            # Just return the audio - no preview for now
-            return (looped_audio, conditioning_audio, info)
+            # Save preview audio and get UI result if preview is enabled
+            if enable_preview and should_play:
+                ui_result = self._save_audio_preview(looped_audio, instance_id)
+                # Return with UI preview
+                return {"ui": ui_result, "result": (looped_audio, conditioning_audio, info)}
+            else:
+                # Return just the tuple (no UI)
+                return (looped_audio, conditioning_audio, info)
 
         except Exception as e:
             error_msg = f"Error in looping preview: {str(e)}"
@@ -190,13 +204,9 @@ class LoopingAudioPreview:
             filename_prefix = f"preview_{instance_id}"
             full_output_folder = self.output_dir
 
-            # Create unique filename
-            counter = 0
-            filename = f"{filename_prefix}_{counter:05}_.wav"
-            output_path = os.path.join(full_output_folder, filename)
-
             # Overwrite the same file for this instance (no need to accumulate temp files)
-            output_path = os.path.join(full_output_folder, f"{filename_prefix}.wav")
+            filename = f"{filename_prefix}.wav"
+            output_path = os.path.join(full_output_folder, filename)
 
             # Save audio using PyAV
             waveform = audio["waveform"].cpu()
@@ -208,6 +218,10 @@ class LoopingAudioPreview:
             out_stream = output_container.add_stream('pcm_s16le', rate=sample_rate)
 
             for batch_waveform in waveform:
+                # Handle mono/stereo
+                if batch_waveform.dim() == 1:
+                    batch_waveform = batch_waveform.unsqueeze(0)
+
                 frame = av.AudioFrame.from_ndarray(
                     batch_waveform.movedim(0, 1).reshape(1, -1).float().numpy(),
                     format='flt',
@@ -226,16 +240,18 @@ class LoopingAudioPreview:
             with open(output_path, 'wb') as f:
                 f.write(output_buffer.getbuffer())
 
-            # Return UI result
+            print(f"💾 Saved preview audio: {output_path}")
+
+            # Return UI result in ComfyUI format
             return {
                 "audio": [{
-                    "filename": os.path.basename(output_path),
+                    "filename": filename,
                     "subfolder": "",
                     "type": self.type
                 }]
             }
         except Exception as e:
-            print(f"Error saving preview audio: {e}")
+            print(f"❌ Error saving preview audio: {e}")
             import traceback
             traceback.print_exc()
             return {}
